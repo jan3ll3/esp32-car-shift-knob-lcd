@@ -1,0 +1,30 @@
+// GC9A01A_Display.h
+#ifndef GC9A01A_DISPLAY_H
+#define GC9A01A_DISPLAY_H
+
+#include <Arduino.h>
+
+// Pin Definitions
+#define TFT_MOSI 38
+#define TFT_SCK 39
+#define TFT_CS 40
+#define TFT_DC 41
+#define TFT_RST 37
+#define TFT_BL 36
+
+class GC9A01A_Display {
+public:
+    GC9A01A_Display();
+    void initDisplay();
+    void fillScreen(uint16_t color);
+
+private:
+    const int SPI_SPEED = 80000000;  // 80MHz
+    
+    void writeCommand(uint8_t cmd);
+    void writeData(uint8_t data);
+    void setPins();
+    void resetDisplay();
+};
+
+#endif // GC9A01A_DISPLAY_H
