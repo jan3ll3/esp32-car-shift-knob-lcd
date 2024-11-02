@@ -403,35 +403,45 @@ void GC9A01A_Display::drawTransparentImage(const TransparentImageData* image, ui
                 uint8_t alpha = (uint16_t)(image->alpha[pixelIndex] * opacity) / 255;
                 
                 if (alpha > 0) {
-                    if (alpha == 255) {
-                        // Fully opaque - direct copy
-                        pixelArray[displayOffset + xOffset] = newPixel;
-                    } else {
-                        // Semi-transparent - blend
-                        uint16_t bgPixel = pixelArray[displayOffset + xOffset];
-                        
-                        // Extract RGB components (5-6-5 format)
-                        uint8_t newR = (newPixel >> 11) & 0x1F;
-                        uint8_t newG = (newPixel >> 5) & 0x3F;
-                        uint8_t newB = newPixel & 0x1F;
-                        
-                        uint8_t bgR = (bgPixel >> 11) & 0x1F;
-                        uint8_t bgG = (bgPixel >> 5) & 0x3F;
-                        uint8_t bgB = bgPixel & 0x1F;
-                        
-                        // Simple linear interpolation
-                        uint8_t blendR = ((newR * alpha) + (bgR * (255 - alpha))) / 255;
-                        uint8_t blendG = ((newG * alpha) + (bgG * (255 - alpha))) / 255;
-                        uint8_t blendB = ((newB * alpha) + (bgB * (255 - alpha))) / 255;
-                        
-                        // Combine back into RGB565
-                        uint16_t blendedPixel = (blendR << 11) | (blendG << 5) | blendB;
-                        pixelArray[displayOffset + xOffset] = blendedPixel;
-                    }
+                    blendPixel(x + xOffset, y + yOffset, newPixel, alpha);
                 }
             }
         }
     }
+}
+
+void GC9A01A_Display::blendPixel(uint16_t x, uint16_t y, uint16_t color, uint8_t opacity) {
+    // Bounds check
+    if (x >= DISPLAY_WIDTH || y >= DISPLAY_HEIGHT) return;
+    
+    // If fully opaque, just set the pixel directly
+    if (opacity == 255) {
+        pixelArray[y * DISPLAY_WIDTH + x] = color;
+        return;
+    }
+    
+    // If fully transparent, don't change anything
+    if (opacity == 0) return;
+    
+    uint16_t bgColor = pixelArray[y * DISPLAY_WIDTH + x];
+    
+    // Convert 5-6-5 to 8-8-8 for better color precision during blending
+    uint8_t newR = ((color >> 11) & 0x1F) << 3;  // 5 bits to 8 bits
+    uint8_t newG = ((color >> 5) & 0x3F) << 2;   // 6 bits to 8 bits
+    uint8_t newB = (color & 0x1F) << 3;          // 5 bits to 8 bits
+    
+    uint8_t bgR = ((bgColor >> 11) & 0x1F) << 3;
+    uint8_t bgG = ((bgColor >> 5) & 0x3F) << 2;
+    uint8_t bgB = (bgColor & 0x1F) << 3;
+    
+    // Blend colors in 8-bit color space
+    uint8_t blendR = ((newR * opacity) + (bgR * (255 - opacity))) >> 8;
+    uint8_t blendG = ((newG * opacity) + (bgG * (255 - opacity))) >> 8;
+    uint8_t blendB = ((newB * opacity) + (bgB * (255 - opacity))) >> 8;
+    
+    // Convert back to 5-6-5
+    uint16_t blendedColor = ((blendR >> 3) << 11) | ((blendG >> 2) << 5) | (blendB >> 3);
+    pixelArray[y * DISPLAY_WIDTH + x] = blendedColor;
 }
 
 // Font data organized as [character][row] for ASCII 32-122
@@ -587,6 +597,110 @@ void GC9A01A_Display::drawText(uint16_t x, uint16_t y, float number, uint16_t co
     char buffer[16];  // Increased buffer size to accommodate more digits
     dtostrf(number, 7, 5, buffer);  // Format: 7 total width, 5 decimal places
     drawText(x, y, buffer, color, size);
+}
+
+// Add these implementations
+
+void GC9A01A_Display::drawRect(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color, uint8_t opacity) {
+    // Draw horizontal lines
+    for (uint16_t i = x; i < x + width; i++) {
+        if (i < DISPLAY_WIDTH) {
+            if (y < DISPLAY_HEIGHT) pixelArray[y * DISPLAY_WIDTH + i] = color;
+            if ((y + height - 1) < DISPLAY_HEIGHT) pixelArray[(y + height - 1) * DISPLAY_WIDTH + i] = color;
+        }
+    }
+    // Draw vertical lines
+    for (uint16_t i = y; i < y + height; i++) {
+        if (i < DISPLAY_HEIGHT) {
+            if (x < DISPLAY_WIDTH) pixelArray[i * DISPLAY_WIDTH + x] = color;
+            if ((x + width - 1) < DISPLAY_WIDTH) pixelArray[i * DISPLAY_WIDTH + (x + width - 1)] = color;
+        }
+    }
+}
+
+void GC9A01A_Display::fillRect(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color, uint8_t opacity) {
+    for (uint16_t i = x; i < x + width && i < DISPLAY_WIDTH; i++) {
+        for (uint16_t j = y; j < y + height && j < DISPLAY_HEIGHT; j++) {
+            pixelArray[j * DISPLAY_WIDTH + i] = color;
+        }
+    }
+}
+
+void GC9A01A_Display::drawCircle(uint16_t x0, uint16_t y0, uint16_t radius, uint16_t color, uint8_t opacity) {
+    int16_t x = radius - 1;
+    int16_t y = 0;
+    int16_t dx = 1;
+    int16_t dy = 1;
+    int16_t err = dx - (radius << 1);
+
+    while (x >= y) {
+        if (x0 + x < DISPLAY_WIDTH && y0 + y < DISPLAY_HEIGHT) 
+            pixelArray[(y0 + y) * DISPLAY_WIDTH + (x0 + x)] = color;
+        if (x0 + y < DISPLAY_WIDTH && y0 + x < DISPLAY_HEIGHT)
+            pixelArray[(y0 + x) * DISPLAY_WIDTH + (x0 + y)] = color;
+        if (x0 - y < DISPLAY_WIDTH && y0 + x < DISPLAY_HEIGHT)
+            pixelArray[(y0 + x) * DISPLAY_WIDTH + (x0 - y)] = color;
+        if (x0 - x < DISPLAY_WIDTH && y0 + y < DISPLAY_HEIGHT)
+            pixelArray[(y0 + y) * DISPLAY_WIDTH + (x0 - x)] = color;
+        if (x0 - x < DISPLAY_WIDTH && y0 - y < DISPLAY_HEIGHT)
+            pixelArray[(y0 - y) * DISPLAY_WIDTH + (x0 - x)] = color;
+        if (x0 - y < DISPLAY_WIDTH && y0 - x < DISPLAY_HEIGHT)
+            pixelArray[(y0 - x) * DISPLAY_WIDTH + (x0 - y)] = color;
+        if (x0 + y < DISPLAY_WIDTH && y0 - x < DISPLAY_HEIGHT)
+            pixelArray[(y0 - x) * DISPLAY_WIDTH + (x0 + y)] = color;
+        if (x0 + x < DISPLAY_WIDTH && y0 - y < DISPLAY_HEIGHT)
+            pixelArray[(y0 - y) * DISPLAY_WIDTH + (x0 + x)] = color;
+
+        if (err <= 0) {
+            y++;
+            err += dy;
+            dy += 2;
+        }
+        if (err > 0) {
+            x--;
+            dx += 2;
+            err += dx - (radius << 1);
+        }
+    }
+}
+
+void GC9A01A_Display::fillCircle(uint16_t x0, uint16_t y0, uint16_t radius, uint16_t color, uint8_t opacity) {
+    int16_t x = radius - 1;
+    int16_t y = 0;
+    int16_t dx = 1;
+    int16_t dy = 1;
+    int16_t err = dx - (radius << 1);
+
+    while (x >= y) {
+        // Draw vertical lines to fill the circle
+        for (int16_t i = x0 - x; i <= x0 + x && i < DISPLAY_WIDTH; i++) {
+            if (i >= 0) {
+                if (y0 + y < DISPLAY_HEIGHT && y0 + y >= 0)
+                    pixelArray[(y0 + y) * DISPLAY_WIDTH + i] = color;
+                if (y0 - y < DISPLAY_HEIGHT && y0 - y >= 0)
+                    pixelArray[(y0 - y) * DISPLAY_WIDTH + i] = color;
+            }
+        }
+        for (int16_t i = x0 - y; i <= x0 + y && i < DISPLAY_WIDTH; i++) {
+            if (i >= 0) {
+                if (y0 + x < DISPLAY_HEIGHT && y0 + x >= 0)
+                    pixelArray[(y0 + x) * DISPLAY_WIDTH + i] = color;
+                if (y0 - x < DISPLAY_HEIGHT && y0 - x >= 0)
+                    pixelArray[(y0 - x) * DISPLAY_WIDTH + i] = color;
+            }
+        }
+
+        if (err <= 0) {
+            y++;
+            err += dy;
+            dy += 2;
+        }
+        if (err > 0) {
+            x--;
+            dx += 2;
+            err += dx - (radius << 1);
+        }
+    }
 }
 
 
