@@ -1,29 +1,68 @@
 #ifndef DEVICE_STATE_H
 #define DEVICE_STATE_H
 
+#include <Arduino.h>
 #include <Preferences.h>
 
 class DeviceState {
+private:
+    Preferences preferences;
+
+    struct PreferencesState {
+        bool initialized;
+        bool appIdentified;
+        bool calibrated;
+    };
+
+    PreferencesState state;
+
 public:
-    DeviceState() : preferences() {}
+    DeviceState() : state{false, false, false} {}
     
-    void begin() {
-        preferences.begin("device", false);  // false = RW mode
-        calibrated = preferences.getBool("calibrated", false);
-        appIdentified = preferences.getBool("app_setup", false);
+    PreferencesState loadStartupState() {
+        if (preferences.begin("smartshift", false)) {
+            // Check initialized
+            if (!preferences.isKey("initialized")) {
+                Serial.println("Creating initialized preference");
+                preferences.putBool("initialized", false);
+            } else {
+                state.initialized = preferences.getBool("initialized");
+            }
+
+            // Check appIdentified
+            if (!preferences.isKey("appIdentified")) {
+                Serial.println("Creating appIdentified preference");
+                preferences.putBool("appIdentified", false);
+            } else {
+                state.appIdentified = preferences.getBool("appIdentified");
+            }
+
+            // Check calibrated
+            if (!preferences.isKey("calibrated")) {
+                Serial.println("Creating calibrated preference");
+                preferences.putBool("calibrated", false);
+            } else {
+                state.calibrated = preferences.getBool("calibrated");
+            }
+        } else {
+            Serial.println("Failed to initialize preferences");
+        }
+        
+        return state;
     }
-    
-    bool isInitialized() const { return calibrated; }
-    bool isAppIdentified() const { return appIdentified; }
+
+    bool isCalibrated() const { return state.calibrated; }
+    bool isInitialized() const { return state.initialized; }
+    bool isAppIdentified() const { return state.appIdentified; }
     
     void setCalibrated(bool status) {
-        calibrated = status;
+        state.calibrated = status;
         preferences.putBool("calibrated", status);
     }
     
     void setAppIdentified(bool status) {
-        appIdentified = status;
-        preferences.putBool("app_setup", status);
+        state.appIdentified = status;
+        preferences.putBool("appIdentified", status);
     }
     
     void completeSetup() {
@@ -32,10 +71,10 @@ public:
     }
     
     void resetDevice() {
-        calibrated = false;
-        appIdentified = false;
+        state.calibrated = false;
+        state.appIdentified = false;
         preferences.putBool("calibrated", false);
-        preferences.putBool("app_setup", false);
+        preferences.putBool("appIdentified", false);
         // Add any other reset operations here
     }
     
@@ -46,11 +85,12 @@ public:
     String getDeviceName() {
         return preferences.getString("device_name", "BMW E34");  // Default name
     }
-
-private:
-    Preferences preferences;
-    bool calibrated = false;
-    bool appIdentified = false;
+    
+    void setInitialized(bool status) {
+        state.initialized = status;
+        preferences.putBool("initialized", status);
+        Serial.printf("Device initialization set to: %s\n", status ? "true" : "false");
+    }
 };
 
 #endif // DEVICE_STATE_H 

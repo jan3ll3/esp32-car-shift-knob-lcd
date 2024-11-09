@@ -1,6 +1,7 @@
 #include "GC9A01A_Display.h"
 #include "spi_dma.h" // Include the SPI DMA header
 #include <stdlib.h> // Include for rand()
+#include "SPIFFS.h" // Include the SPIFFS header
 
 GC9A01A_Display::GC9A01A_Display() {
     // Remove spi.initSPI() call and frameBuffer allocation
@@ -701,6 +702,105 @@ void GC9A01A_Display::fillCircle(uint16_t x0, uint16_t y0, uint16_t radius, uint
             err += dx - (radius << 1);
         }
     }
+}
+
+// Add these methods to your GC9A01A_Display class
+void GC9A01A_Display::drawBinaryImage(const char* filename, uint16_t x, uint16_t y) {
+    File file = SPIFFS.open(filename, "r");
+    if (!file) {
+        Serial.printf("Failed to open image file: %s\n", filename);
+        return;
+    }
+
+    // Read dimensions
+    uint16_t width, height;
+    file.read((uint8_t*)&width, sizeof(width));
+    file.read((uint8_t*)&height, sizeof(height));
+
+    // Allocate buffer for one row of pixels
+    uint16_t* rowBuffer = (uint16_t*)heap_caps_malloc(width * sizeof(uint16_t), MALLOC_CAP_DMA);
+    if (!rowBuffer) {
+        Serial.println("Failed to allocate DMA buffer");
+        file.close();
+        return;
+    }
+
+    // For each row of the image
+    for (uint16_t yOffset = 0; yOffset < height; yOffset++) {
+        // Read one row of pixels
+        file.read((uint8_t*)rowBuffer, width * 2);  // 2 bytes per pixel
+
+        // Calculate the starting position in the pixel array for this row
+        uint32_t displayOffset = (y + yOffset) * DISPLAY_WIDTH + x;
+
+        // For each pixel in the row
+        for (uint16_t xOffset = 0; xOffset < width; xOffset++) {
+            // Only draw the pixel if it's within the display bounds
+            if ((x + xOffset) < DISPLAY_WIDTH && (y + yOffset) < DISPLAY_HEIGHT) {
+                // Swap bytes for correct RGB565 format
+                uint16_t pixel = rowBuffer[xOffset];
+                pixel = (pixel << 8) | (pixel >> 8);  // Swap high and low bytes
+                pixelArray[displayOffset + xOffset] = pixel;
+            }
+        }
+    }
+
+    free(rowBuffer);
+    file.close();
+}
+
+void GC9A01A_Display::drawBinaryTransparentImage(const char* filename, uint16_t x, uint16_t y, uint8_t opacity) {
+    File file = SPIFFS.open(filename, "r");
+    if (!file) {
+        Serial.printf("Failed to open transparent image file: %s\n", filename);
+        return;
+    }
+
+    // Read dimensions
+    uint16_t width, height;
+    file.read((uint8_t*)&width, sizeof(width));
+    file.read((uint8_t*)&height, sizeof(height));
+
+    // Allocate buffers for one row
+    uint16_t* colorBuffer = (uint16_t*)heap_caps_malloc(width * sizeof(uint16_t), MALLOC_CAP_DMA);
+    uint8_t* alphaBuffer = (uint8_t*)heap_caps_malloc(width * sizeof(uint8_t), MALLOC_CAP_DMA);
+    if (!colorBuffer || !alphaBuffer) {
+        Serial.println("Failed to allocate DMA buffers");
+        file.close();
+        return;
+    }
+
+    // For each row of the image
+    for (uint16_t yOffset = 0; yOffset < height; yOffset++) {
+        // Read one row of color data
+        file.read((uint8_t*)colorBuffer, width * 2);
+
+        // Read one row of alpha data
+        file.read(alphaBuffer, width);
+
+        // Calculate the starting position in the pixel array for this row
+        uint32_t displayOffset = (y + yOffset) * DISPLAY_WIDTH + x;
+
+        // For each pixel in the row
+        for (uint16_t xOffset = 0; xOffset < width; xOffset++) {
+            // Only draw the pixel if it's within the display bounds
+            if ((x + xOffset) < DISPLAY_WIDTH && (y + yOffset) < DISPLAY_HEIGHT) {
+                uint16_t newPixel = colorBuffer[xOffset];
+                newPixel = (newPixel << 8) | (newPixel >> 8);  // Swap bytes
+
+                // Calculate combined alpha
+                uint8_t alpha = (uint16_t)(alphaBuffer[xOffset] * opacity) / 255;
+
+                if (alpha > 0) {
+                    blendPixel(x + xOffset, y + yOffset, newPixel, alpha);
+                }
+            }
+        }
+    }
+
+    free(colorBuffer);
+    free(alphaBuffer);
+    file.close();
 }
 
 

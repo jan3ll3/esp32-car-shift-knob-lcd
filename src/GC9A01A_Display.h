@@ -2,17 +2,11 @@
 #ifndef GC9A01A_DISPLAY_H
 #define GC9A01A_DISPLAY_H
 
+#include "PinDefinitions.h"
 #include <Arduino.h>
-#include "SPI_DMA.h"
+#include <SPIFFS.h>
+#include "spi_dma.h"
 #include "images/images.h"
-
-// Define TFT Pins
-#define TFT_MOSI 38       // Data In (DIN)
-#define TFT_SCK 39        // Clock (CLK)
-#define TFT_CS 40         // Chip Select (CS)
-#define TFT_DC 41         // Data/Command (DC)
-#define TFT_RST 37        // Reset (RST)
-#define TFT_BL 36         // Backlight
 
 class GC9A01A_Display {
 public:
@@ -41,6 +35,15 @@ public:
     void drawCircle(uint16_t x0, uint16_t y0, uint16_t radius, uint16_t color = 0xFFFF, uint8_t opacity = 255);
     void fillCircle(uint16_t x0, uint16_t y0, uint16_t radius, uint16_t color = 0xFFFF, uint8_t opacity = 255);
 
+    // New binary image methods
+    void drawBinaryImage(const char* filename, uint16_t x, uint16_t y);
+    void drawBinaryTransparentImage(const char* filename, uint16_t x, uint16_t y, uint8_t opacity = 255);
+
+    // Other existing methods...
+    void fillScreen(uint16_t color);
+    void setRotation(uint8_t rotation);
+    void invertDisplay(bool invert);
+
 private:
     uint8_t* frameBuffer;
     SPI_DMA spi_dma;
@@ -54,6 +57,7 @@ private:
     void writeData(uint8_t data);
     void resetDisplay();
     void blendPixel(uint16_t x, uint16_t y, uint16_t color, uint8_t opacity);
+    void setAddressWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 };
 
 #endif // GC9A01A_DISPLAY_H
